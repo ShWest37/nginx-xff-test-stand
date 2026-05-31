@@ -1,0 +1,64 @@
+services:
+  # Backend-приложение на Python
+  app:
+    build: ./app
+    networks:
+      - testnet
+    # Опционально: ограничение ресурсов для стабильности на слабом железе
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Первый прокси (входная точка) — порт 8081 на хосте
+  nginx1:
+    image: nginx:alpine
+    ports:
+      # Пробрасываем порт 8081 хоста → порт 80 контейнера
+      # В WSL2 это автоматически делает порт доступным из Windows через localhost
+      - "8081:80"
+    volumes:
+      # Монтируем базовый конфиг с логикой map
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Монтируем специфичный конфиг для этого экземпляра
+      - ./nginx/nginx1.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - testnet
+    depends_on:
+      - app
+
+  # Второй прокси — порт 8082
+  nginx2:
+    image: nginx:alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx2.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - testnet
+    depends_on:
+      - nginx1
+
+  # Третий прокси — порт 8083
+  nginx3:
+    image: nginx:alpine
+    ports:
+      - "8083:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx3.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - testnet
+    depends_on:
+      - nginx2
+
+# Изолированная сеть с фиксированной подсетью для корректной работы map-директивы
+networks:
+  testnet:
+    driver: bridge
+    ipam:
+      config:
+        # Жёстко задаём подсеть, чтобы контейнеры получали IP вида 192.168.100.x
+        # Это нужно, чтобы регулярное выражение в nginx.conf корректно определяло "внутренние" запросы
+        - subnet: 192.168.100.0/24
